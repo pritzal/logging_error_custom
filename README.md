@@ -1,7 +1,7 @@
 # logging_error_custom
 # Exception Logger
 
-`ExceptionLogger` is a Python library designed to log exceptions into a MySQL database. It provides a robust way to track errors, categorize them, and store them for future analysis. This library ensures that the required tables are automatically created and allows for easy integration with various applications.
+`ExceptionLogger` is a Python library created by Aayush Chaudhary, designed to log exceptions into a MySQL database. It provides a robust way to track errors, categorize them, and store them for future analysis. This library ensures that the required tables are automatically created and allows for easy integration with various applications.
 
 ## Features
 
