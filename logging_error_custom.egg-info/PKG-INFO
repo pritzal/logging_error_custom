@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: logging_error_custom
+Version: 0.10
+Summary: A library for logging exceptions to a MySQL database.
+Author: Aayush Chaudhary
+Author-email: aayush18702@example.com
+Requires-Dist: mysql-connector-python
+Requires-Dist: python-dotenv

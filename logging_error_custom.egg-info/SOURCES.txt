@@ -1,0 +1,8 @@
+setup.py
+logging_error_custom/__init__.py
+logging_error_custom/logger.py
+logging_error_custom.egg-info/PKG-INFO
+logging_error_custom.egg-info/SOURCES.txt
+logging_error_custom.egg-info/dependency_links.txt
+logging_error_custom.egg-info/requires.txt
+logging_error_custom.egg-info/top_level.txt
