@@ -66,7 +66,9 @@ ExceptionCategory: Stores categories of exceptions.
 ApplicationTypeMaster: Stores types of applications (e.g., backend, frontend).
 ApplicationMaster: Stores applications with their names, types, and timestamps.
 ApplicationException: Stores logged exceptions, linking them to specific applications and categories.
-Contributing
+
+##Contributing
+
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 #License
