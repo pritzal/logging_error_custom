@@ -16,7 +16,7 @@
 pip install mysql-connector-python
 pip install python-dotenv
 
-## Usage
+# Usage
 1. Setting Up Environment Variables
 Create a .env file in your project root with the following content:
 
@@ -67,11 +67,11 @@ ApplicationTypeMaster: Stores types of applications (e.g., backend, frontend).
 ApplicationMaster: Stores applications with their names, types, and timestamps.
 ApplicationException: Stores logged exceptions, linking them to specific applications and categories.
 
-##Contributing
+# Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-#License
+# License
 
 This project is licensed under the MIT License.
 
