@@ -1,3 +1,4 @@
+README.md
 setup.py
 logging_error_custom/__init__.py
 logging_error_custom/logger.py

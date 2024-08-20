@@ -1,172 +1,148 @@
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+from logging_error_custom import ExceptionLogger  # Import from your package
 import mysql.connector
-from datetime import datetime, timezone
 import os
-from dotenv import load_dotenv
-import re
+from typing import List, Optional
 
-# Load environment variables
-load_dotenv()
+app = FastAPI()
 
-class ExceptionLogger:
-    def __init__(self, db_config=None):
-        if db_config is None:
-            db_config = {
-                'user': os.getenv('DB_USER', 'default_user'),
-                'password': os.getenv('DB_PASSWORD', 'default_password'),
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'ApplicationPerfDB')
-            }
-        self.db_config = db_config
-        self.conn = None
-        self.cursor = None
-        try:
-            self.connect_to_database()
-            self.ensure_database_and_tables_exist()
-        except mysql.connector.Error as err:
-            print(f"Database connection error: {err}")
-        except Exception as e:
-            print(f"Unexpected error: {e}")
+# Define the Pydantic model for incoming log data
+class ApplicationException(BaseModel):
+    application_name: str
+    application_type: str
+    category: str
+    message: str
+    stack_trace: str
+    exception_details: str = None
+    exp_object: str = None
+    exp_process: str = None
+    inner_exception: str = None
 
-    def connect_to_database(self):
-        """Connect to the MySQL server and select the specified database."""
-        try:
-            self.conn = mysql.connector.connect(
-                user=self.db_config['user'],
-                password=self.db_config['password'],
-                host=self.db_config['host']
-            )
-            self.cursor = self.conn.cursor()
-            self.cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.db_config['database']}")
-            self.cursor.execute(f"USE {self.db_config['database']}")
-            print(f"Connected to database: {self.db_config['database']}")
-        except mysql.connector.Error as err:
-            print(f"Database connection error: {err}")
-            raise
+class ApplicationDetails(BaseModel):
+    application_name: str
+    application_type: str
+    created_date: str
+    updated_date: str
+    user_id: Optional[int] = None
 
-    def ensure_database_and_tables_exist(self):
-        """Ensure that the required database and tables exist."""
-        try:
-            # Ensure ExceptionCategory table exists
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ExceptionCategory (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    category VARCHAR(50) NOT NULL,
-                    description VARCHAR(100)
-                )
-            """)
+@app.post("/save-application-exception/")
+async def save_application_exception(app_expt: ApplicationException):
+    try:
+        logger = ExceptionLogger()  # Use the class from your package
+        logger.log_exception(
+            application_name=app_expt.application_name,
+            application_type=app_expt.application_type,
+            category=app_expt.category,
+            message=app_expt.message,
+            stack_trace=app_expt.stack_trace,
+            exception_details=app_expt.exception_details,
+            exp_object=app_expt.exp_object,
+            exp_process=app_expt.exp_process,
+            inner_exception=app_expt.inner_exception
+        )
+        return {"status": "success", "message": "Exception logged successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-            # Ensure ApplicationTypeMaster table exists
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ApplicationTypeMaster (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    type VARCHAR(50) NOT NULL
-                )
-            """)
+@app.get("/get-application-exceptions/")
+async def get_application_exceptions(
+    type: str,
+    application_id: int
+):
+    try:
+        # Initialize the ExceptionLogger
+        logger = ExceptionLogger()
 
-            # Ensure ApplicationMaster table exists
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ApplicationMaster (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL,
-                    type_id INT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (type_id) REFERENCES ApplicationTypeMaster(id)
-                )
-            """)
+        # Create a database connection
+        conn = mysql.connector.connect(
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            database=os.getenv('DB_NAME')
+        )
+        cursor = conn.cursor()
 
-            # Ensure ApplicationException table exists
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ApplicationException (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    application_id INT,
-                    category_id INT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    error_message TEXT,
-                    stack_trace TEXT,
-                    FOREIGN KEY (application_id) REFERENCES ApplicationMaster(id),
-                    FOREIGN KEY (category_id) REFERENCES ExceptionCategory(id)
-                )
-            """)
-            print("Tables ensured successfully.")
-        except mysql.connector.Error as err:
-            print(f"Error ensuring tables: {err}")
-            raise
+        # Fetch exceptions by type and application ID
+        query = """
+        SELECT * FROM ApplicationException
+        WHERE category_id = (
+            SELECT id FROM ExceptionCategory WHERE category = %s
+        ) AND application_id = %s
+        """
+        cursor.execute(query, (type, application_id))
+        exceptions = cursor.fetchall()
 
-    def ensure_application_exists(self, application_name, application_type):
-        """Check if the application exists in the ApplicationMaster table and add it if necessary."""
-        try:
-            # Ensure application type exists
-            self.cursor.execute("SELECT id FROM ApplicationTypeMaster WHERE type = %s", (application_type,))
-            type_id = self.cursor.fetchone()
-            if type_id is None:
-                self.cursor.execute("INSERT INTO ApplicationTypeMaster (type) VALUES (%s)", (application_type,))
-                self.conn.commit()
-                type_id = self.cursor.lastrowid
-            else:
-                type_id = type_id[0]
+        # Format the results
+        result = []
+        for exc in exceptions:
+            result.append({
+                "id": exc[0],
+                "exception_details": exc[1],
+                "message": exc[2],
+                "exp_object": exc[3],
+                "exp_process": exc[4],
+                "application_id": exc[5],
+                "category_id": exc[6],
+                "created_datetime": exc[7],
+                "inner_exception": exc[8],
+                "stack_trace": exc[9]
+            })
 
-            # Ensure application exists
-            self.cursor.execute("SELECT id FROM ApplicationMaster WHERE name = %s", (application_name,))
-            application_id = self.cursor.fetchone()
-            if application_id is None:
-                self.cursor.execute("""
-                    INSERT INTO ApplicationMaster (name, type_id)
-                    VALUES (%s, %s)
-                """, (application_name, type_id))
-                self.conn.commit()
-                application_id = self.cursor.lastrowid
-            else:
-                application_id = application_id[0]
+        # Close the database connection
+        cursor.close()
+        conn.close()
 
-            return application_id
-        except mysql.connector.Error as err:
-            print(f"Database error: {err}")
-            raise
+        return {"status": "success", "data": result}
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Database error: {err}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    def log_exception(self, application_name, application_type, category, message, stack_trace):
-        """Log an exception into the ApplicationException table."""
-        if self.conn is None or self.cursor is None:
-            print("Database connection not established.")
-            return
+@app.get("/get-application-details/")
+async def get_application_details(app_id: int):
+    try:
+        # Create a database connection
+        conn = mysql.connector.connect(
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            host=os.getenv('DB_HOST'),
+            database=os.getenv('DB_NAME')
+        )
+        cursor = conn.cursor()
 
-        try:
-            # Ensure application exists
-            application_id = self.ensure_application_exists(application_name, application_type)
+        # Fetch application details by ID
+        query = """
+        SELECT app_name, app_type_id, created_date, updated_date, user_id
+        FROM ApplicationMaster
+        WHERE id = %s
+        """
+        cursor.execute(query, (app_id,))
+        app_details = cursor.fetchone()
 
-            # Ensure exception category exists
-            self.cursor.execute("SELECT id FROM ExceptionCategory WHERE category = %s", (category,))
-            category_id = self.cursor.fetchone()
-            if category_id is None:
-                self.cursor.execute("INSERT INTO ExceptionCategory (category) VALUES (%s)", (category,))
-                self.conn.commit()
-                category_id = self.cursor.lastrowid
-            else:
-                category_id = category_id[0]
+        if app_details is None:
+            raise HTTPException(status_code=404, detail="Application not found")
 
-            # Log the exception
-            query = """
-            INSERT INTO ApplicationException (application_id, category_id, error_message, stack_trace, timestamp)
-            VALUES (%s, %s, %s, %s, %s)
-            """
-            timestamp = datetime.now(timezone.utc)
-            self.cursor.execute(query, (application_id, category_id, message, stack_trace, timestamp))
-            self.conn.commit()
-            print("Log entry committed to database.")
-        except mysql.connector.Error as err:
-            print(f"Database error: {err}")
-        except Exception as e:
-            print(f"Unexpected error: {e}")
+        # Fetch application type description
+        cursor.execute("SELECT app_type FROM ApplicationTypeMaster WHERE id = %s", (app_details[1],))
+        app_type = cursor.fetchone()
+        app_type_description = app_type[0] if app_type else "Unknown"
 
-    def close(self):
-        """Close the database connection."""
-        if self.cursor:
-            self.cursor.close()
-        if self.conn:
-            self.conn.close()
+        # Format the results
+        result = {
+            "application_name": app_details[0],
+            "application_type": app_type_description,
+            "created_date": app_details[2],
+            "updated_date": app_details[3],
+            "user_id": app_details[4]
+        }
 
-    def __enter__(self):
-        return self
+        # Close the database connection
+        cursor.close()
+        conn.close()
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        return {"status": "success", "data": result}
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Database error: {err}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

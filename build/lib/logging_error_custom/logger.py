@@ -2,7 +2,6 @@ import mysql.connector
 from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
-import re
 
 # Load environment variables
 load_dotenv()
@@ -59,7 +58,8 @@ class ExceptionLogger:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ApplicationTypeMaster (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    type VARCHAR(50) NOT NULL
+                    app_type VARCHAR(50) NOT NULL,
+                    description VARCHAR(100)
                 )
             """)
 
@@ -67,11 +67,12 @@ class ExceptionLogger:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ApplicationMaster (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL,
-                    type_id INT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    FOREIGN KEY (type_id) REFERENCES ApplicationTypeMaster(id)
+                    app_name VARCHAR(100) NOT NULL,
+                    app_type_id INT,
+                    created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    user_id INT,
+                    FOREIGN KEY (app_type_id) REFERENCES ApplicationTypeMaster(id)
                 )
             """)
 
@@ -79,10 +80,14 @@ class ExceptionLogger:
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ApplicationException (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    exception_details TEXT,
+                    message TEXT,
+                    exp_object TEXT,
+                    exp_process TEXT,
                     application_id INT,
                     category_id INT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    error_message TEXT,
+                    created_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    inner_exception TEXT,
                     stack_trace TEXT,
                     FOREIGN KEY (application_id) REFERENCES ApplicationMaster(id),
                     FOREIGN KEY (category_id) REFERENCES ExceptionCategory(id)
@@ -97,21 +102,21 @@ class ExceptionLogger:
         """Check if the application exists in the ApplicationMaster table and add it if necessary."""
         try:
             # Ensure application type exists
-            self.cursor.execute("SELECT id FROM ApplicationTypeMaster WHERE type = %s", (application_type,))
+            self.cursor.execute("SELECT id FROM ApplicationTypeMaster WHERE app_type = %s", (application_type,))
             type_id = self.cursor.fetchone()
             if type_id is None:
-                self.cursor.execute("INSERT INTO ApplicationTypeMaster (type) VALUES (%s)", (application_type,))
+                self.cursor.execute("INSERT INTO ApplicationTypeMaster (app_type) VALUES (%s)", (application_type,))
                 self.conn.commit()
                 type_id = self.cursor.lastrowid
             else:
                 type_id = type_id[0]
 
             # Ensure application exists
-            self.cursor.execute("SELECT id FROM ApplicationMaster WHERE name = %s", (application_name,))
+            self.cursor.execute("SELECT id FROM ApplicationMaster WHERE app_name = %s", (application_name,))
             application_id = self.cursor.fetchone()
             if application_id is None:
                 self.cursor.execute("""
-                    INSERT INTO ApplicationMaster (name, type_id)
+                    INSERT INTO ApplicationMaster (app_name, app_type_id)
                     VALUES (%s, %s)
                 """, (application_name, type_id))
                 self.conn.commit()
@@ -124,7 +129,7 @@ class ExceptionLogger:
             print(f"Database error: {err}")
             raise
 
-    def log_exception(self, application_name, application_type, category, message, stack_trace):
+    def log_exception(self, application_name, application_type, category, message, stack_trace, exception_details=None, exp_object=None, exp_process=None, inner_exception=None):
         """Log an exception into the ApplicationException table."""
         if self.conn is None or self.cursor is None:
             print("Database connection not established.")
@@ -146,11 +151,11 @@ class ExceptionLogger:
 
             # Log the exception
             query = """
-            INSERT INTO ApplicationException (application_id, category_id, error_message, stack_trace, timestamp)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO ApplicationException (exception_details, message, exp_object, exp_process, application_id, category_id, created_datetime, inner_exception, stack_trace)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             timestamp = datetime.now(timezone.utc)
-            self.cursor.execute(query, (application_id, category_id, message, stack_trace, timestamp))
+            self.cursor.execute(query, (exception_details, message, exp_object, exp_process, application_id, category_id, timestamp, inner_exception, stack_trace))
             self.conn.commit()
             print("Log entry committed to database.")
         except mysql.connector.Error as err:

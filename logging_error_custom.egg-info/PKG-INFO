@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: logging_error_custom
-Version: 0.10
+Version: 0.13
 Summary: A library for logging exceptions to a MySQL database.
 Author: Aayush Chaudhary
 Author-email: aayush18702@example.com
